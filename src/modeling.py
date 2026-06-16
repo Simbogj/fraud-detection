@@ -22,7 +22,9 @@ logger = logging.getLogger('modeling')
 logger.setLevel(logging.INFO)
 if not logger.handlers:
     console_handler = logging.StreamHandler()
-    file_handler = logging.FileHandler('logs/modeling.log')
+    log_dir = Path('logs')
+    log_dir.mkdir(parents=True, exist_ok=True)
+    file_handler = logging.FileHandler(log_dir / 'modeling.log')
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     for h in (console_handler, file_handler):
         h.setFormatter(formatter)
@@ -31,19 +33,62 @@ if not logger.handlers:
 # ------------------------------------------------------------------
 # Helper utilities
 # ------------------------------------------------------------------
-def load_processed_data(processed_dir: Path):
-    """Load the pre‑processed NumPy .npz bundles.
+def load_processed_data(processed_dir: Path, dataset: str = 'fraud'):
+    """Load pre-processed train/test splits from CSV files produced by the
+    feature-engineering notebook, or from a cached .npz bundle.
+
+    Parameters
+    ----------
+    processed_dir : Path
+        Directory containing the processed files.
+    dataset : str
+        'fraud' for Fraud_Data or 'cc' for creditcard.
 
     Returns
     -------
-    X, y : np.ndarray
-        Feature matrix and target vector.
+    X_train, X_test, y_train, y_test : np.ndarray
+        Feature matrices and target vectors.
     """
-    fraud_npz = np.load(processed_dir / 'fraud_preprocessed.npz')
-    X = fraud_npz['X']
-    y = fraud_npz['y']
-    logger.info('Loaded processed fraud data: X shape %s, y length %d', X.shape, len(y))
-    return X, y
+    prefix = 'fraud' if dataset == 'fraud' else 'cc'
+    npz_path = processed_dir / f'{prefix}_preprocessed.npz'
+
+    # Try loading from cached .npz first
+    if npz_path.exists():
+        data = np.load(npz_path)
+        X_train, X_test = data['X_train'], data['X_test']
+        y_train, y_test = data['y_train'], data['y_test']
+        logger.info('Loaded %s from .npz: train %s, test %s',
+                    dataset, X_train.shape, X_test.shape)
+        return X_train, X_test, y_train, y_test
+
+    # Fall back to CSV splits from feature-engineering notebook
+    x_train_path = processed_dir / f'{prefix}_X_train_smote.csv'
+    y_train_path = processed_dir / f'{prefix}_y_train_smote.csv'
+    x_test_path  = processed_dir / f'{prefix}_X_test.csv'
+    y_test_path  = processed_dir / f'{prefix}_y_test.csv'
+
+    for p in (x_train_path, y_train_path, x_test_path, y_test_path):
+        if not p.exists():
+            raise FileNotFoundError(
+                f'{p} not found. Run the feature-engineering notebook first '
+                f'to generate processed data splits.'
+            )
+
+    X_train = pd.read_csv(x_train_path).values
+    y_train = pd.read_csv(y_train_path).values.ravel()
+    X_test  = pd.read_csv(x_test_path).values
+    y_test  = pd.read_csv(y_test_path).values.ravel()
+
+    logger.info('Loaded %s from CSVs: train %s, test %s',
+                dataset, X_train.shape, X_test.shape)
+
+    # Cache as .npz for faster subsequent loads
+    np.savez(npz_path,
+             X_train=X_train, X_test=X_test,
+             y_train=y_train, y_test=y_test)
+    logger.info('Cached %s to %s', dataset, npz_path)
+
+    return X_train, X_test, y_train, y_test
 
 def split_data(X, y, test_size=0.2, random_state=42):
     """Stratified train‑test split.
@@ -166,15 +211,17 @@ def load_model(model_path: Path):
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='Run modeling pipeline for fraud detection')
-    parser.add_argument('--processed_dir', type=str, default='data/processed', help='Directory with processed .npz files')
+    parser.add_argument('--processed_dir', type=str, default='data/processed', help='Directory with processed files')
     parser.add_argument('--model_dir', type=str, default='models', help='Directory to store trained models')
+    parser.add_argument('--dataset', type=str, default='fraud', choices=['fraud', 'cc'],
+                        help='Which dataset: fraud (Fraud_Data) or cc (creditcard)')
     parser.add_argument('--run_xgb', action='store_true', help='Train XGBoost model (if available)')
     args = parser.parse_args()
 
     processed_dir = Path(args.processed_dir)
     model_dir = Path(args.model_dir)
-    X, y = load_processed_data(processed_dir)
-    X_train, X_test, y_train, y_test = split_data(X, y)
+
+    X_train, X_test, y_train, y_test = load_processed_data(processed_dir, dataset=args.dataset)
 
     # Logistic Regression
     lr = train_logistic_regression(X_train, y_train)
