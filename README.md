@@ -41,6 +41,7 @@ To run the notebooks or modular code locally, follow these steps:
 2. **Set up the Virtual Environment**:
    ```bash
    python -m venv venv
+   
    # On Windows:
    .\venv\Scripts\activate
    # On macOS/Linux:
