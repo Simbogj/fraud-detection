@@ -55,13 +55,23 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     logger.info("Data cleaning completed")
     return df
 
-def ip_to_int(ip_str: str) -> int:
-    """Convert dotted IPv4 address to a 32‑bit integer. Returns -1 for malformed entries."""
+def ip_to_int(ip_val) -> int:
+    """Convert IP address (either numeric float/int or dotted IPv4 string) to integer.
+    Returns -1 for malformed entries or NaN.
+    """
+    if pd.isna(ip_val):
+        return -1
+    if isinstance(ip_val, (int, float, np.integer, np.floating)):
+        return int(round(ip_val))
     try:
-        parts = ip_str.split('.')
-        return (int(parts[0]) << 24) + (int(parts[1]) << 16) + (int(parts[2]) << 8) + int(parts[3])
+        ip_str = str(ip_val).strip()
+        if '.' in ip_str:
+            parts = ip_str.split('.')
+            if len(parts) == 4:
+                return (int(parts[0]) << 24) + (int(parts[1]) << 16) + (int(parts[2]) << 8) + int(parts[3])
+        return int(float(ip_str))
     except Exception:
-        logger.warning(f"Failed to convert IP '{ip_str}' to integer")
+        logger.warning(f"Failed to convert IP '{ip_val}' to integer")
         return -1
 
 def build_ip_lookup(df_ip: pd.DataFrame) -> IntervalTree:

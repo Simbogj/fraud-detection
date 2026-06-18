@@ -1,131 +1,76 @@
 # Fraud Detection - E-commerce and Bank Transactions
 
-## Project Overview
+This repository contains a production-grade machine learning system to identify and prevent fraudulent transactions across two data streams: E-commerce transactions (`Fraud_Data.csv`) and Credit Card transactions (`creditcard.csv`).
 
-This project improves fraud detection across two transaction streams for **Adey Innovations Inc.**:
+## 1. Project Overview & Architecture
+This pipeline addresses two distinct transaction data patterns:
+- **E-Commerce Transactions**: Feature engineering based on signup-to-purchase latency, temporal attributes, geolocation, and transaction frequency.
+- **Credit Card Transactions**: Highly anonymized PCA-transformed features.
 
-- **E-commerce transactions** (Fraud_Data.csv) — rich user, device, and behavioral context
-- **Bank credit card transactions** (creditcard.csv) — PCA-anonymized features
-
-Both datasets are highly imbalanced, requiring specialized preprocessing, resampling, and evaluation strategies.
-
-## Repository Structure
-
-```
-fraud-detection/
-├── .github/workflows/unittests.yml
-├── .vscode/settings.json
+The repository follows a clean, modular structure:
+```text
 ├── data/
-│   ├── raw/                    # Original datasets (gitignored)
-│   │   ├── Fraud_Data.csv
-│   │   ├── IpAddress_to_Country.csv
-│   │   └── creditcard.csv
-│   └── processed/              # Cleaned and feature-engineered data
-├── notebooks/
-│   ├── eda-fraud-data.ipynb          # EDA for e-commerce fraud data
-│   ├── eda-creditcard.ipynb          # EDA for credit card data
-│   ├── feature-engineering.ipynb     # Feature engineering, scaling, SMOTE
-│   ├── modeling.ipynb                # Model training (Task 2)
-│   ├── shap-explainability.ipynb     # SHAP analysis (Task 3)
+│   ├── raw/             # Raw datasets (gitignored)
+│   └── processed/       # Preprocessed arrays and generated plots
+├── models/              # PERSISTED trained model objects (pkl)
+├── notebooks/           # Jupyter notebooks for EDA, Modeling, and Explainability
+│   ├── eda-fraud-data.ipynb
+│   ├── eda-creditcard.ipynb
+│   ├── modeling.ipynb
+│   ├── shap-explainability.ipynb
 │   └── README.md
-├── src/
-│   ├── __init__.py
-│   ├── data_loader.py                # Raw data loading functions
-│   ├── preprocessing.py              # Full preprocessing pipeline
-│   └── modeling.py                   # Model training and evaluation
-├── scripts/
-│   ├── __init__.py
-│   └── generate_notebooks.py         # Regenerates .ipynb from Python
-├── tests/
-│   └── __init__.py
-├── models/                           # Saved model artifacts (gitignored)
-├── requirements.txt
-└── README.md
+├── src/                 # Reusable production source code
+│   ├── data_loader.py
+│   ├── preprocessing.py
+│   └── modeling.py
+├── reports/             # Business intelligence and analysis reports
+│   └── final_report.md
+├── requirements.txt     # Virtual environment requirements
+└── README.md            # Global project documentation
 ```
 
-## Setup
+## 2. Installation & Setup
+To run the notebooks or modular code locally, follow these steps:
 
-```bash
-# Clone the repository
-git clone <repo-url>
-cd fraud-detection
+1. **Clone the Repository**:
+   ```bash
+   git clone https://github.com/Simbogj/fraud-detection
+   cd fraud-detection
+   ```
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate        # Linux/Mac
-venv\Scripts\activate           # Windows
+2. **Set up the Virtual Environment**:
+   ```bash
+   python -m venv venv
+   # On Windows:
+   .\venv\Scripts\activate
+   # On macOS/Linux:
+   source venv/bin/activate
+   ```
 
-# Install dependencies
-pip install -r requirements.txt
-```
+3. **Install Dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-### Key Dependencies
-- `pandas`, `numpy` — data manipulation
-- `scikit-learn` — preprocessing, modeling, metrics
-- `imbalanced-learn` — SMOTE resampling
-- `xgboost` — ensemble model
-- `shap` — model explainability
-- `matplotlib`, `seaborn` — visualization
-- `jupyter` — notebooks
+## 3. Modeling Results & Evaluation
+We trained two models for each dataset: **Logistic Regression** (baseline) and **XGBoost** (ensemble). Models were validated using 5-fold Stratified Cross-Validation.
 
-## Task 1: Data Analysis and Preprocessing
+### E-Commerce Fraud Data Results
+- **Logistic Regression**: AUC-PR: `0.394` | F1-Score: `0.512`
+- **XGBoost**: AUC-PR: `0.626` | F1-Score: `0.704`
 
-### Data Cleaning
-- **Missing values**: No missing values found in either dataset
-- **Duplicates**: Exact duplicate rows removed from both datasets
-- **Data types**: Timestamps parsed to datetime, categorical columns set to `category` dtype, target columns cast to `int8`
+### Credit Card PCA Data Results
+- **Logistic Regression**: AUC-PR: `0.713` | F1-Score: `0.724`
+- **XGBoost**: AUC-PR: `0.803` | F1-Score: `0.825`
 
-### Exploratory Data Analysis
+**Conclusion**: **XGBoost** was selected as the final production model for both datasets due to its significantly higher AUC-PR and F1 scores, which translate to a better balance between catching fraud (recall) and minimizing false alarms (precision).
 
-**Fraud_Data.csv (~151K transactions)**
-- Univariate distributions: age, purchase_value, gender, browser, source
-- Bivariate analysis: features vs fraud target, fraud rates by browser/source/gender
-- Class imbalance: ~9% fraud (approximately 10:1 ratio)
+## 4. Key SHAP Explainability Insights
+- **`time_since_signup`**: The single strongest driver of fraud. Instant transactions following signup (typically under 1 hour) are highly suspicious.
+- **`user_txn_count` & `txn_in_24h`**: Velocity markers show that high frequencies of transactions are strong fraud flags.
+- **`purchase_value`**: Higher-value transactions systematically increase the fraud probability score.
 
-**creditcard.csv (~285K transactions)**
-- Univariate distributions: Time, Amount, PCA features V1-V28
-- Bivariate analysis: Amount and top PCA features by fraud class
-- Class imbalance: ~0.17% fraud (approximately 578:1 ratio)
-
-### Geolocation Integration (Fraud_Data only)
-1. `ip_address` column is already numeric (float) — cast to integer
-2. Range-based merge with `IpAddress_to_Country.csv` using `pd.merge_asof`
-3. Validated each IP falls within the matched range; unmatched IPs labeled "Unknown"
-4. Analyzed fraud rates by country
-
-### Feature Engineering (Fraud_Data)
-
-| Feature | Description |
-|---|---|
-| `time_since_signup` | Hours between signup and purchase (clipped to >= 0) |
-| `hour_of_day` | Hour of purchase (0-23) |
-| `day_of_week` | Day of purchase (0=Monday, 6=Sunday) |
-| `user_transaction_count` | Total transactions per user |
-| `txn_in_24h` | Transactions by same user in preceding 24 hours |
-| `country` | Geolocation from IP-to-country lookup |
-
-### Data Transformation
-- **Numerical features**: StandardScaler
-- **Categorical features**: OneHotEncoder (with `handle_unknown='ignore'`)
-- Applied via `ColumnTransformer` on train/test splits
-
-### Class Imbalance Handling
-
-**Technique: SMOTE** (Synthetic Minority Over-sampling Technique)
-
-**Justification:**
-1. SMOTE generates synthetic minority samples along the feature-space convex hull, preserving decision boundaries better than random oversampling
-2. It avoids the information loss of undersampling the majority class
-3. Applied **only on the training set** to prevent data leakage into test evaluation
-4. Both datasets balanced to 50/50 after SMOTE
-
-| Dataset | Before SMOTE | After SMOTE |
-|---|---|---|
-| Fraud_Data | ~9% fraud | 50% fraud |
-| creditcard | ~0.17% fraud | 50% fraud |
-
-### Deliverables
-- `notebooks/eda-fraud-data.ipynb` — Full EDA report for Fraud_Data.csv
-- `notebooks/eda-creditcard.ipynb` — Full EDA report for creditcard.csv
-- `notebooks/feature-engineering.ipynb` — Feature engineering, encoding, scaling, SMOTE
-- `data/processed/` — Cleaned datasets and train/test splits
+## 5. Actionable Recommendations
+1. Require multi-factor authentication (MFA) for transactions occurring within 1 hour of user signup.
+2. Trigger temporary account locks or CAPTCHAs if an account exceeds 3 transactions within 24 hours.
+3. Automatically escalate high-ticket purchases (>$300) to secondary verification if the purchase IP differs from the signup IP.
